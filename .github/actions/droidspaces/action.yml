@@ -152,10 +152,8 @@ runs:
           CONFIG_VETH=y
           CONFIG_BRIDGE=y
           CONFIG_BRIDGE_NETFILTER=y
-          # VLAN_8021Q must stay =m: Kleaf's gki_aarch64_modules list hard-requires
-          # net/8021q/8021q.ko, and switching it to =y makes the build fail with
-          # "Unable to find net/8021q/8021q.ko". BRIDGE_VLAN_FILTERING only needs
-          # the dependency to be anything but n, so =m is enough.
+          # VLAN_8021Q must stay =m: Kleaf gki_aarch64_modules hard-requires
+          # net/8021q/8021q.ko. BRIDGE_VLAN_FILTERING only needs a non-n dep.
           CONFIG_VLAN_8021Q=m
           CONFIG_BRIDGE_VLAN_FILTERING=y
           CONFIG_VXLAN=y
@@ -231,7 +229,6 @@ runs:
           CONFIG_SECURITY_NETWORK=y
           CONFIG_SECURITY_SELINUX=y
           CONFIG_SECURITY_APPARMOR=y
-          CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,selinux,tomoyo,bpf"
           # Encrypted overlay networking checks
           CONFIG_CRYPTO=y
           CONFIG_CRYPTO_AEAD=y
@@ -243,6 +240,22 @@ runs:
           CONFIG_XFRM_ALGO=y
           CONFIG_INET_ESP=y
           CONFIG_NETFILTER_XT_MATCH_BPF=y
+
+    - name: Pin LSM order (keep SELinux ahead of AppArmor)
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        DEFCONFIG=arch/arm64/configs/gki_defconfig
+        ORDER='landlock,lockdown,yama,loadpin,safesetid,selinux,tomoyo,bpf'
+        # Enabling SECURITY_APPARMOR makes Kconfig default AppArmor ahead of
+        # SELinux in CONFIG_LSM. That would hand early boot to an LSM with no
+        # policy on Android, so pin the order explicitly.
+        if grep -q '^CONFIG_LSM=' "$DEFCONFIG"; then
+          sed -i "s|^CONFIG_LSM=.*|CONFIG_LSM=\"$ORDER\"|" "$DEFCONFIG"
+        else
+          echo "CONFIG_LSM=\"$ORDER\"" >> "$DEFCONFIG"
+        fi
+        grep -n '^CONFIG_LSM=' "$DEFCONFIG"
 
     - name: Fix BakaSU 6.6 selinux_hide static conflict
       shell: bash
