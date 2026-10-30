@@ -122,15 +122,28 @@ runs:
           CONFIG_CGROUP_PIDS=y
 
     - name: Fix BakaSU 6.6 selinux_hide static conflict
-      if: inputs.root_flavor == 'bakasu'
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
-        F="$(find . -path '*drivers/kernelsu/feature/selinux_hide.c' | head -n 1)"
+        F=""
+        for cand in common/drivers/kernelsu/feature/selinux_hide.c \
+                    drivers/kernelsu/feature/selinux_hide.c \
+                    common/drivers/kernelsu/selinux/selinux_hide.c; do
+          if [ -f "$cand" ]; then F="$cand"; break; fi
+        done
         if [ -z "$F" ]; then
-          echo "[bakasu-fix] selinux_hide.c not present, skipping"
+          F="$(find -L . -path '*drivers/kernelsu*selinux_hide.c' 2>/dev/null | head -n 1)"
+        fi
+        if [ -z "$F" ]; then
+          if [ -f BakaSU/kernel/feature/selinux_hide.c ]; then
+            echo "[bakasu-fix] FATAL: BakaSU present but selinux_hide.c not resolvable" >&2
+            ls -la drivers 2>/dev/null | head -n 20
+            exit 1
+          fi
+          echo "[bakasu-fix] no BakaSU selinux_hide.c in this tree, nothing to do"
           exit 0
         fi
+        echo "[bakasu-fix] target: $F"
         if ! grep -q 'security_context_to_sid_with_policy' "$F"; then
           echo "[bakasu-fix] helper not present, nothing to do"
           exit 0
@@ -144,5 +157,9 @@ runs:
         sed -i 's/security_context_to_sid_with_policy/ksu_security_context_to_sid_with_policy/g' "$F"
         sed -i -E 's/^[[:space:]]*(__maybe_static[[:space:]]+)?int[[:space:]]+ksu_security_context_to_sid_with_policy/static int ksu_security_context_to_sid_with_policy/' "$F"
         echo "[bakasu-fix] declarations now:"
-        grep -n 'ksu_security_context_to_sid_with_policy' "$F" | head -n 4
+        grep -n 'ksu_security_context_to_sid_with_policy' "$F" | head -n 6
+        if grep -qE '^[[:space:]]*(__maybe_static[[:space:]]+)?int[[:space:]]+ksu_security_context_to_sid_with_policy' "$F"; then
+          echo "[bakasu-fix] FATAL: normalisation did not stick" >&2
+          exit 1
+        fi
 
