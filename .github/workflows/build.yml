@@ -172,6 +172,7 @@ jobs:
           os_patch_level: ${{ inputs.os_patch_level }}
 
       - name: Spoof /proc/config.gz With Stock Config
+        if: false
         uses: ./.github/actions/stock-config
         with:
           version: ${{ inputs.version }}
