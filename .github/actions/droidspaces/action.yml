@@ -121,3 +121,28 @@ runs:
           CONFIG_CFS_BANDWIDTH=y
           CONFIG_CGROUP_PIDS=y
 
+    - name: Fix BakaSU 6.6 selinux_hide static conflict
+      if: inputs.root_flavor == 'bakasu'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        F="$(find . -path '*drivers/kernelsu/feature/selinux_hide.c' | head -n 1)"
+        if [ -z "$F" ]; then
+          echo "[bakasu-fix] selinux_hide.c not present, skipping"
+          exit 0
+        fi
+        if ! grep -q 'security_context_to_sid_with_policy' "$F"; then
+          echo "[bakasu-fix] helper not present, nothing to do"
+          exit 0
+        fi
+        # Upstream declares this helper with one static-ness and defines it with
+        # __maybe_static. On 6.6 the two disagree and clang rejects the pair:
+        #   error: static declaration of 'security_context_to_sid_with_policy'
+        #          follows non-static declaration
+        # Rename the file-private copy so no kernel symbol can ever clash, then
+        # force the prototype and the definition to plain `static`.
+        sed -i 's/security_context_to_sid_with_policy/ksu_security_context_to_sid_with_policy/g' "$F"
+        sed -i -E 's/^[[:space:]]*(__maybe_static[[:space:]]+)?int[[:space:]]+ksu_security_context_to_sid_with_policy/static int ksu_security_context_to_sid_with_policy/' "$F"
+        echo "[bakasu-fix] declarations now:"
+        grep -n 'ksu_security_context_to_sid_with_policy' "$F" | head -n 4
+
