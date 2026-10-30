@@ -257,6 +257,29 @@ runs:
         fi
         grep -n '^CONFIG_LSM=' "$DEFCONFIG"
 
+    - name: Default IP forwarding on (data-only, no ABI change)
+      shell: bash
+      if: inputs.version == 'android15-6.6'
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        set -euo pipefail
+        # check-config.sh wants net.ipv4.ip_forward and both IPv6 forwarding
+        # sysctls to read 1. They come straight out of static initialisers, so
+        # changing the default is pure data: no struct layout change, no new
+        # symbol, no KMI or CRC impact.
+        V4=net/ipv4/devinet.c
+        V6=net/ipv6/addrconf.c
+
+        sed -i -E 's|^([[:space:]]*)\[IPV4_DEVCONF_ACCEPT_REDIRECTS - 1\] = 1,|\1[IPV4_DEVCONF_FORWARDING - 1] = 1,\n\1[IPV4_DEVCONF_ACCEPT_REDIRECTS - 1] = 1,|' "$V4"
+        n4=$(grep -c 'IPV4_DEVCONF_FORWARDING - 1\] = 1,' "$V4" || true)
+        echo "[fwd] ipv4 initialisers patched: $n4"
+        [ "$n4" = "2" ] || { echo "[fwd] FATAL: expected 2 ipv4 patches, got $n4" >&2; exit 1; }
+
+        sed -i -E 's|^([[:space:]]*)\.forwarding([[:space:]]*)= 0,|\1.forwarding\2= 1,|' "$V6"
+        n6=$(grep -cE '^[[:space:]]*\.forwarding[[:space:]]*= 1,' "$V6" || true)
+        echo "[fwd] ipv6 devconf initialisers patched: $n6"
+        [ "$n6" = "2" ] || { echo "[fwd] FATAL: expected 2 ipv6 patches, got $n6" >&2; exit 1; }
+
     - name: Fix BakaSU 6.6 selinux_hide static conflict
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
